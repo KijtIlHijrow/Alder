@@ -1,6 +1,8 @@
 package dev.alder
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import androidx.media3.common.MimeTypes
 import org.junit.Test
 
 class ScreenDesignTest {
@@ -545,6 +547,26 @@ class ScreenDesignTest {
             ),
             playerBadges(dtsRemuxTb, audioLanguage = "id", audioChannels = 6, subtitleLanguage = "eng"),
         )
+    }
+
+    @Test fun playerBadgesReadWidescreenAndPlayingTrack() {
+        fun res(w: Int, h: Int) = playerBadges(null, videoHeight = h, videoWidth = w).first().label
+        assertEquals("4K", res(3840, 1608))
+        assertEquals("4K", res(3836, 1600))
+        assertEquals("1080p", res(1920, 800))
+        assertEquals("1080p", res(1916, 1036))
+        assertEquals("720p", res(1280, 536))
+        assertEquals("1440p", res(2560, 1440))
+
+        val atmos = Stream("Torrentio 2160p", "Film.2160p.WEB-DL.DDP5.1.Atmos.mkv", "https://example.invalid/a.mkv",
+            emptyMap(), 0L, "Film.2160p.WEB-DL.DDP5.1.Atmos.mkv", null)
+        fun audio(s: Stream, mime: String?) = playerBadges(s, audioMime = mime).map { it.brand to it.label }
+        assertTrue(BadgeBrand.DOLBY to "ATMOS" in audio(atmos, MimeTypes.AUDIO_E_AC3))
+        assertTrue(audio(atmos, MimeTypes.AUDIO_AAC).none { it.first == BadgeBrand.DOLBY && it.second != "VISION" })
+
+        val dtsX = Stream("Comet 2160p", "Film.2160p.BluRay.REMUX.DTS:X.7.1.mkv", "https://example.invalid/x.mkv",
+            emptyMap(), 0L, "Film.2160p.BluRay.REMUX.DTS:X.7.1.mkv", null)
+        assertTrue(BadgeBrand.DTS to "X" in audio(dtsX, MimeTypes.AUDIO_DTS_HD))
     }
 
     @Test fun playerBadgesEmptyWhenNoStreamOrTracks() {

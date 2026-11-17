@@ -167,6 +167,7 @@ internal data class PlayerBadge(val brand: BadgeBrand, val label: String, val co
 internal fun playerBadges(
     stream: Stream?,
     videoHeight: Int = 0,
+    videoWidth: Int = 0,
     audioLanguage: String? = null,
     audioMime: String? = null,
     audioLabel: String? = null,
@@ -175,25 +176,33 @@ internal fun playerBadges(
 ): List<PlayerBadge> {
     if (stream == null && videoHeight <= 0 && audioMime == null && audioLanguage == null && subtitleLanguage == null) return emptyList()
     val out = mutableListOf<PlayerBadge>()
-    val height = videoHeight.takeIf { it > 0 } ?: stream?.height ?: 0
+    // Widescreen films are stored without black bars (4K scope is 3840 x 1608), so the width's 16:9 height counts too.
+    val height = maxOf(videoHeight.takeIf { it > 0 } ?: stream?.height ?: 0, videoWidth * 9 / 16)
+    // Midway between sizes: a file cropped a few pixels (3836 or 1916 wide) keeps its class.
     when {
-        height >= 2160 -> out += PlayerBadge(BadgeBrand.NONE, "4K", accent = true)
-        height >= 1440 -> out += PlayerBadge(BadgeBrand.NONE, "1440p")
-        height >= 1080 -> out += PlayerBadge(BadgeBrand.NONE, "1080p")
-        height >= 720 -> out += PlayerBadge(BadgeBrand.NONE, "720p")
+        height >= 1800 -> out += PlayerBadge(BadgeBrand.NONE, "4K", accent = true)
+        height >= 1260 -> out += PlayerBadge(BadgeBrand.NONE, "1440p")
+        height >= 900 -> out += PlayerBadge(BadgeBrand.NONE, "1080p")
+        height >= 600 -> out += PlayerBadge(BadgeBrand.NONE, "720p")
         height >= 480 -> out += PlayerBadge(BadgeBrand.NONE, "${height}p")
     }
     if (stream?.dolbyVision == true) out += PlayerBadge(BadgeBrand.DOLBY, "VISION", accent = true)
     if (stream?.hdr == true && !stream.dolbyVision) out += PlayerBadge(BadgeBrand.NONE, "HDR", accent = true)
 
     val words = "${stream?.filename.orEmpty()} ${stream?.title.orEmpty()} ${stream?.description.orEmpty()} ${audioLabel.orEmpty()}".lowercase()
-    val atmos = audioMime == MimeTypes.AUDIO_E_AC3_JOC || "atmos" in words
-    val trueHd = audioMime == MimeTypes.AUDIO_TRUEHD || "truehd" in words
+    // The file name describes the main audio track. Once the playing track is known, the name only refines its own
+    // codec family (Matroska reports Atmos as plain E-AC-3, DTS-HD MA as DTS), so an AAC commentary is not "ATMOS".
+    val unknown = audioMime == null
+    val dolbyTrack = unknown || audioMime == MimeTypes.AUDIO_E_AC3 || audioMime == MimeTypes.AUDIO_E_AC3_JOC ||
+        audioMime == MimeTypes.AUDIO_TRUEHD
+    val dtsTrack = audioMime?.startsWith("audio/vnd.dts") == true
+    val atmos = audioMime == MimeTypes.AUDIO_E_AC3_JOC || (dolbyTrack && "atmos" in words)
+    val trueHd = audioMime == MimeTypes.AUDIO_TRUEHD || (unknown && "truehd" in words)
     val dolbyDigital = audioMime == MimeTypes.AUDIO_E_AC3 || audioMime == MimeTypes.AUDIO_AC3 ||
-        Regex("\\b(ddp?|e-?ac-?3|dolby.?digital)(\\b|\\d)").containsMatchIn(words)
-    val dtsX = Regex("dts[-_. ]?x\\b").containsMatchIn(words)
-    val dtsHd = audioMime == MimeTypes.AUDIO_DTS_HD || Regex("dts[-_. ]?hd").containsMatchIn(words)
-    val dts = audioMime == MimeTypes.AUDIO_DTS || Regex("\\bdts\\b").containsMatchIn(words)
+        (unknown && Regex("\\b(ddp?|e-?ac-?3|ac-?3|dolby.?digital)(\\b|\\d)").containsMatchIn(words))
+    val dtsX = (unknown || dtsTrack) && Regex("dts[-_.: ]?x\\b").containsMatchIn(words)
+    val dtsHd = audioMime == MimeTypes.AUDIO_DTS_HD || ((unknown || dtsTrack) && Regex("dts[-_.: ]?hd").containsMatchIn(words))
+    val dts = dtsTrack || (unknown && Regex("\\bdts\\b").containsMatchIn(words))
 
     when {
         atmos -> out += PlayerBadge(BadgeBrand.DOLBY, "ATMOS", accent = true)
@@ -1819,9 +1828,12 @@ class PlayerActivity : Screen() {
             ?.let(Languages::code)?.let(Languages::name) ?: getString(R.string.state_on)
         val videoHeight = player.videoFormat?.height?.takeIf { it > 0 }
             ?: tracks.groups.firstOrNull { it.type == C.TRACK_TYPE_VIDEO && it.isSelected }?.getTrackFormat(0)?.height ?: 0
+        val videoWidth = player.videoFormat?.width?.takeIf { it > 0 }
+            ?: tracks.groups.firstOrNull { it.type == C.TRACK_TYPE_VIDEO && it.isSelected }?.getTrackFormat(0)?.width ?: 0
         val badges = playerBadges(
             stream = sources.getOrNull(at),
             videoHeight = videoHeight,
+            videoWidth = videoWidth,
             audioLanguage = audio?.language,
             audioMime = audio?.sampleMimeType,
             audioLabel = audio?.label,
