@@ -592,6 +592,7 @@ class PlayerActivity : Screen() {
                 if (reason == Player.DISCONTINUITY_REASON_SEEK) {
                     seekedAt = System.currentTimeMillis()
                     skipped.clear() // back into an intro: offer it again
+                    skip.tag = null // and give the pill a fresh 10 s, not the time left from its last showing
                 }
             }
 
